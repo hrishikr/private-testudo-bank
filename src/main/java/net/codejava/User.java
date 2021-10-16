@@ -22,6 +22,9 @@ public class User {
   @Setter @Getter @PositiveOrZero
 	private int balance;
 
+  @Setter @Getter @PositiveOrZero
+	private int overdraftBalance;
+
   @Setter @Getter @Positive
   private int amountToDeposit;
 
