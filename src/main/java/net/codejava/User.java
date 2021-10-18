@@ -1,5 +1,9 @@
 package net.codejava;
 
+import java.util.List;
+import java.util.Map;
+
+
 import javax.validation.constraints.Positive;
 import javax.validation.constraints.PositiveOrZero;
 
@@ -18,6 +22,9 @@ public class User {
 
   @Setter @Getter
   private String lastName;
+
+  @Setter @Getter
+  private List<Map<String,Object>> overdraftLogs;
 
   @Setter @Getter @PositiveOrZero
 	private int balance;
