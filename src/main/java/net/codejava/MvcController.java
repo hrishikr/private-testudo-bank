@@ -21,15 +21,22 @@ public class MvcController {
    * specified in /src/main/resources/application.properties
    */
   private JdbcTemplate jdbcTemplate;
-  private static java.util.Date dt = new java.util.Date();
-  private static java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-  private final static String SQL_DATETIME_FORMAT = sdf.format(dt);
+  // private static java.util.Date dt = new java.util.Date();
+  // private static java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+  // private final static String SQL_DATETIME_FORMAT = sdf.format(dt);
   private final static double INTEREST_RATE = 1.02;
   private final static int MAX_OVERDRAFT_IN_PENNIES = 100000;
   private final static String HTML_LINE_BREAK = "<br/>";
 
   public MvcController(@Autowired JdbcTemplate jdbcTemplate) {
     this.jdbcTemplate = jdbcTemplate;
+  }
+
+  private String getCurrentDateTime() {
+    java.util.Date dt = new java.util.Date();
+    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    String sql_datetime_format = sdf.format(dt);
+    return sql_datetime_format;
   }
 
   /**
@@ -170,6 +177,15 @@ public class MvcController {
       return "welcome";
     }
 
+    // Get number of fraud reversals
+    String getUserReversalsSql = String.format("SELECT NumFraudReversals FROM Customers WHERE CustomerID='%s';", userID);
+    int numFraudReversals = jdbcTemplate.queryForObject(getUserReversalsSql, Integer.class);
+
+    // Account frozen and no withdrawals/deposits can be made
+    if (numFraudReversals >= 2) {
+      return "welcome";
+    }
+
     String getUserOverdraftBalanceSql = String.format("SELECT OverdraftBalance FROM customers WHERE CustomerID='%s';", userID);
     int userOverdraftBalanceInPennies = jdbcTemplate.queryForObject(getUserOverdraftBalanceSql, Integer.class);
 
@@ -179,7 +195,7 @@ public class MvcController {
 
       String overdraftLogsInsertSql = String.format("INSERT INTO OverdraftLogs VALUES ('%s', '%s', %d, %d, %d);", 
                                                     userID,
-                                                    SQL_DATETIME_FORMAT,
+                                                    getCurrentDateTime(),
                                                     userDepositAmtInPennies,
                                                     userOverdraftBalanceInPennies,
                                                     newOverdraftBalanceInPennies);
@@ -206,6 +222,14 @@ public class MvcController {
     System.out.println(balanceIncreaseSql); // Print executed SQL update for debugging
     jdbcTemplate.update(balanceIncreaseSql);
 
+    // Adding new transaction log
+    String transactionLogInsertSQL = String.format("INSERT INTO TransactionHistory VALUES ('%s', '%s', '%s', %d);", 
+                                                    userID,
+                                                    getCurrentDateTime(),
+                                                    "Deposit",
+                                                    userDepositAmtInPennies);
+    jdbcTemplate.update(transactionLogInsertSQL);
+    
     updateAccountInfo(user);
     return "account_info";
   }
@@ -258,6 +282,15 @@ public class MvcController {
       return "welcome";
     }
 
+    // Get number of fraud reversals
+    String getUserReversalsSql = String.format("SELECT NumFraudReversals FROM Customers WHERE CustomerID='%s';", userID);
+    int numFraudReversals = jdbcTemplate.queryForObject(getUserReversalsSql, Integer.class);
+
+    // Account frozen and no withdrawals/deposits can be made
+    if (numFraudReversals >= 2) {
+      return "welcome";
+    }
+
     String getUserBalanceSql =  String.format("SELECT Balance FROM customers WHERE CustomerID='%s';", userID);
     int userBalanceInPennies = jdbcTemplate.queryForObject(getUserBalanceSql, Integer.class);
     
@@ -298,8 +331,15 @@ public class MvcController {
     System.out.println(balanceDecreaseSql);
     jdbcTemplate.update(balanceDecreaseSql);
 
-    updateAccountInfo(user);
+    // Adding new transaction log
+    String transactionLogInsertSQL = String.format("INSERT INTO TransactionHistory VALUES ('%s', '%s', '%s', %d);", 
+                                                    userID,
+                                                    getCurrentDateTime(),
+                                                    "Withdraw",
+                                                    userWithdrawAmtInPennies);
+    jdbcTemplate.update(transactionLogInsertSQL);
 
+    updateAccountInfo(user);
     return "account_info";
 
   }
@@ -317,5 +357,96 @@ public class MvcController {
     User user = new User();
 		model.addAttribute("user", user);
 		return "dispute_form";
+	}
+
+  /**
+   * HTML GET request handler that serves the "dispute_form" page to the user.
+   * An empty `User` object is also added to the Model as an Attribute to store
+   * the user's dispute form input.
+   * 
+   * @param model
+   * @return "dispute_form" page
+   */
+  @PostMapping("/dispute")
+	public String submitDispute(@ModelAttribute("user") User user) {
+    String userID = user.getUsername();
+    String userPasswordAttempt = user.getPassword();
+    int transactionNum = user.getNumTransactionsAgo();
+    
+    String getUserPasswordSql = String.format("SELECT Password FROM passwords WHERE CustomerID='%s';", userID);
+    String userPassword = jdbcTemplate.queryForObject(getUserPasswordSql, String.class);
+
+    // Unsuccessful login
+    if (userPasswordAttempt.equals(userPassword) == false) {
+      return "welcome";
+    }
+
+    // Invalid arument for which transaction to reverse
+    if (transactionNum <= 0 || transactionNum > 3) {
+      return "welcome";
+    }
+
+    // Get number of fraud reversals
+    String getUserReversalsSql = String.format("SELECT NumFraudReversals FROM Customers WHERE CustomerID='%s';", userID);
+    int numFraudReversals = jdbcTemplate.queryForObject(getUserReversalsSql, Integer.class);
+
+    // Account frozen and no withdrawals/deposits can be made
+    if (numFraudReversals >= 2) {
+      return "welcome";
+    }
+
+    String getTransactionLogsSql = String.format("SELECT * FROM TransactionHistory WHERE CustomerID='%s' ORDER BY Timestamp DESC;", user.getUsername());
+    
+    List<Map<String,Object>> transactionLogs = jdbcTemplate.queryForList(getTransactionLogsSql);
+    System.out.println("peepee " + transactionLogs + "pp");
+    Map<String, Object> transaction;
+    // Check if the number of transactions ago is not greater than the number of transactions in the log
+    if (transactionNum - 1 >= transactionLogs.size()) {
+      return "welcome";
+    }
+    transaction = transactionLogs.get(transactionNum - 1);
+    int transactionAmountInPennies = (Integer) transaction.get("Amount");
+
+    String getUserBalanceSql =  String.format("SELECT Balance FROM customers WHERE CustomerID='%s';", userID);
+    int userBalanceInPennies = jdbcTemplate.queryForObject(getUserBalanceSql, Integer.class);
+    
+    if (((String)transaction.get("Action")).equals("Deposit")) {
+
+      // TODO: Check corner cases
+      String balanceDecreaseSql = String.format("UPDATE Customers SET Balance = Balance - %d WHERE CustomerID='%s';", transactionAmountInPennies, userID);
+      System.out.println(balanceDecreaseSql);
+      jdbcTemplate.update(balanceDecreaseSql);
+            
+      // Adding new transaction log for reversal
+      String transactionLogInsertSQL = String.format("INSERT INTO TransactionHistory VALUES ('%s', '%s', '%s', %d);", 
+                                                      userID,
+                                                      getCurrentDateTime(),
+                                                      "Withdraw",
+                                                      transactionAmountInPennies);
+      jdbcTemplate.update(transactionLogInsertSQL);
+
+
+    } else {
+      // TODO: Check corner cases
+      String balanceIncreaseSql = String.format("UPDATE Customers SET Balance = Balance + %d WHERE CustomerID='%s';", transactionAmountInPennies, userID);
+      System.out.println(balanceIncreaseSql); // Print executed SQL update for debugging
+      jdbcTemplate.update(balanceIncreaseSql);
+
+      // Adding new transaction log for reversal
+      String transactionLogInsertSQL = String.format("INSERT INTO TransactionHistory VALUES ('%s', '%s', '%s', %d);", 
+                                                      userID,
+                                                      getCurrentDateTime(),
+                                                      "Deposit",
+                                                      transactionAmountInPennies);
+      jdbcTemplate.update(transactionLogInsertSQL);
+
+    }
+
+    String updateNumFraudReversals = String.format("UPDATE Customers SET NumFraudReversals = NumFraudReversals + %d WHERE CustomerID='%s';", 1, userID);
+    System.out.println(updateNumFraudReversals); // Print executed SQL update for debugging
+    jdbcTemplate.update(updateNumFraudReversals);
+
+    updateAccountInfo(user);
+    return "account_info";
 	}
 }
