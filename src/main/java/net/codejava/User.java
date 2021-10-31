@@ -23,20 +23,31 @@ public class User {
   @Setter @Getter
   private String lastName;
 
+<<<<<<< HEAD
   @Setter @Getter
   private List<Map<String,Object>> overdraftLogs;
+=======
+  @Setter  @Getter @PositiveOrZero
+	private double balance;
+>>>>>>> 59f3c65bdc4c2be4593bd48803a8764aed93de05
 
   @Setter @Getter @PositiveOrZero
-	private int balance;
+	private double overDraftBalance;
+
+  @Setter @Getter
+	private String logs;
 
   @Setter @Getter @PositiveOrZero
 	private int overdraftBalance;
 
   @Setter @Getter @Positive
-  private int amountToDeposit;
+  private double amountToDeposit;
 
   @Setter @Getter @Positive
-  private int amountToWithdraw;
+  private double amountToWithdraw;
+
+  @Setter @Getter
+  private int numTransactionsAgo;
 
 	@Override
 	public String toString() {
