@@ -32,6 +32,7 @@ public class MvcController {
     this.jdbcTemplate = jdbcTemplate;
   }
 
+  // Private method to get current date and time in a yyyy-MM-dd HH:mm:ss as a String object
   private String getCurrentDateTime() {
     java.util.Date dt = new java.util.Date();
     java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -438,20 +439,23 @@ public class MvcController {
     transaction = transactionLogs.get(transactionNum - 1);
     int transactionAmountInPennies = (Integer) transaction.get("Amount");
     DateTimeFormatter sdf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    String transactionTimestamp = sdf.format((java.time.LocalDateTime)transaction.get("Timestamp"));
+    String transactionTimestamp = sdf.format((java.time.LocalDateTime) transaction.get("Timestamp"));
 
     if (((String) transaction.get("Action")).equals("Deposit")) {
       // ------------------------------ Reversing a Deposit -----------------------------------------
-     
-     // Getting if the deposit to be reversed was used for the repayment of an overdraft
+
+      // Getting if the deposit to be reversed was used for the repayment of an
+      // overdraft
       String getOverDraftLogsSql = String.format(
-          "SELECT * FROM OverdraftLogs WHERE CustomerID='%s' AND DepositAmt = '%d' AND Timestamp = '%s';", user.getUsername(),
-          transactionAmountInPennies, transactionTimestamp);
+          "SELECT * FROM OverdraftLogs WHERE CustomerID='%s' AND DepositAmt = '%d' AND Timestamp = '%s';",
+          user.getUsername(), transactionAmountInPennies, transactionTimestamp);
       List<Map<String, Object>> queryRepaymentLog = jdbcTemplate.queryForList(getOverDraftLogsSql);
       boolean overdraftRepayment;
 
-      /* If no overdraft log corresponds to the time of the deposit then the depost was not used to 
-         repay an overdraft */
+      /*
+       * If no overdraft log corresponds to the time of the deposit then the depost
+       * was not used to repay an overdraft
+       */
       if (queryRepaymentLog.size() == 0) {
         overdraftRepayment = false;
       } else {
@@ -484,7 +488,8 @@ public class MvcController {
         jdbcTemplate.update(updateBalanceSql);
         int newOverdraftAmtAfterInterestInPennies;
 
-        // If the deposit being reversed was used for overdraft repayment, no interest to be charged
+        // If the deposit being reversed was used for overdraft repayment, no interest
+        // to be charged
         if (overdraftRepayment == true) {
           newOverdraftAmtAfterInterestInPennies = (int) (newOverdraftAmtInPennies);
         } else {
@@ -500,33 +505,83 @@ public class MvcController {
 
         // Adding new transaction log
         String transactionLogInsertSQL = String.format("INSERT INTO TransactionHistory VALUES ('%s', '%s', '%s', %d);",
-            userID, getCurrentDateTime(), "Withdraw", transactionAmountInPennies);
+                                                        userID, 
+                                                        getCurrentDateTime(), 
+                                                        "Withdraw", 
+                                                        transactionAmountInPennies);
         jdbcTemplate.update(transactionLogInsertSQL);
 
       } else {
         // non-overdraft case
         String balanceDecreaseSql = String.format("UPDATE Customers SET Balance = Balance - %d WHERE CustomerID='%s';",
-            transactionAmountInPennies, userID);
+                                                    transactionAmountInPennies, 
+                                                    userID);
         System.out.println(balanceDecreaseSql);
         jdbcTemplate.update(balanceDecreaseSql);
 
         // Adding new transaction log
         String transactionLogInsertSQL = String.format("INSERT INTO TransactionHistory VALUES ('%s', '%s', '%s', %d);",
-            userID, getCurrentDateTime(), "Withdraw", transactionAmountInPennies);
+                                                      userID, 
+                                                      getCurrentDateTime(), 
+                                                      "Withdraw", 
+                                                      transactionAmountInPennies);
         jdbcTemplate.update(transactionLogInsertSQL);
 
       }
 
     } else {
       // ------------------------------ Reversing a withdraw --------------------------------
+
+      String getUserOverdraftBalanceSql = String.format("SELECT OverdraftBalance FROM customers WHERE CustomerID='%s';", userID);
+      int userOverdraftBalanceInPennies = jdbcTemplate.queryForObject(getUserOverdraftBalanceSql, Integer.class);
+
+      String currTime = getCurrentDateTime();
+
+      // if the overdraft balance is positive, subtract the deposit with interest
+      if (userOverdraftBalanceInPennies > 0) {
+        int newOverdraftBalanceInPennies = Math.max(userOverdraftBalanceInPennies - transactionAmountInPennies, 0);
+
+        String overdraftLogsInsertSql = String.format("INSERT INTO OverdraftLogs VALUES ('%s', '%s', %d, %d, %d);",
+                                                      userID, 
+                                                      currTime, 
+                                                      transactionAmountInPennies,
+                                                      userOverdraftBalanceInPennies, 
+                                                      newOverdraftBalanceInPennies);
+        jdbcTemplate.update(overdraftLogsInsertSql);
+
+        // updating customers table
+        String overdraftBalanceUpdateSql = String.format(
+            "UPDATE Customers SET OverdraftBalance = %d WHERE CustomerID='%s';", 
+            newOverdraftBalanceInPennies, 
+            userID);
+        jdbcTemplate.update(overdraftBalanceUpdateSql);
+        updateAccountInfo(user);
+      }
+
+      // if in the overdraft case and there is excess deposit, deposit the excess
+      // amount.
+      // otherwise, this is a non-overdraft case, so just use the userDepositAmt.
+      int balanceIncreaseAmtInPennies = 0;
+      if (userOverdraftBalanceInPennies > 0 && transactionAmountInPennies > userOverdraftBalanceInPennies) {
+        balanceIncreaseAmtInPennies = transactionAmountInPennies - userOverdraftBalanceInPennies;
+      } else if (userOverdraftBalanceInPennies > 0 && transactionAmountInPennies <= userOverdraftBalanceInPennies) {
+        balanceIncreaseAmtInPennies = 0; // overdraft case, but no excess deposit. Don't increase balance column.
+      } else {
+        balanceIncreaseAmtInPennies = transactionAmountInPennies;
+      }
+
       String balanceIncreaseSql = String.format("UPDATE Customers SET Balance = Balance + %d WHERE CustomerID='%s';",
-          transactionAmountInPennies, userID);
+                                                  balanceIncreaseAmtInPennies, 
+                                                  userID);
       System.out.println(balanceIncreaseSql); // Print executed SQL update for debugging
       jdbcTemplate.update(balanceIncreaseSql);
 
-      // Adding new transaction log for reversal
+      // Adding new transaction log
       String transactionLogInsertSQL = String.format("INSERT INTO TransactionHistory VALUES ('%s', '%s', '%s', %d);",
-          userID, getCurrentDateTime(), "Deposit", transactionAmountInPennies);
+                                                      userID, 
+                                                      currTime, 
+                                                      "Deposit", 
+                                                      transactionAmountInPennies);
       jdbcTemplate.update(transactionLogInsertSQL);
 
     }
