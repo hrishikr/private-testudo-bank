@@ -26,7 +26,10 @@ public class User {
 	private double overDraftBalance;
 
   @Setter @Getter
-	private String logs;
+	private String repaymentLogs;
+
+  @Setter @Getter
+	private String transactionLogs;
 
   @Setter @Getter @Positive
   private double amountToDeposit;
