@@ -460,6 +460,11 @@ public class MvcController {
         overdraftRepayment = false;
       } else {
         overdraftRepayment = true;
+        // Delete overdraft entry from table
+        String deleteOverdraftLogSql = String.format(
+          "DELETE FROM OverdraftLogs WHERE CustomerID='%s' AND DepositAmt = '%d' AND Timestamp = '%s';",
+          user.getUsername(), transactionAmountInPennies, transactionTimestamp);
+        jdbcTemplate.update(deleteOverdraftLogSql);
       }
 
       // Getting user balance
