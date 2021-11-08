@@ -20,11 +20,8 @@ public class MvcController {
    * specified in /src/main/resources/application.properties
    */
   private JdbcTemplate jdbcTemplate;
-  // private static java.util.Date dt = new java.util.Date();
-  // private static java.text.SimpleDateFormat sdf = new
-  // java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-  // private final static String SQL_DATETIME_FORMAT = sdf.format(dt);
   private final static double INTEREST_RATE = 1.02;
+  private final static int MAX_REVERSALS = 2;
   private final static int MAX_OVERDRAFT_IN_PENNIES = 100000;
   private final static String HTML_LINE_BREAK = "<br/>";
 
@@ -206,7 +203,7 @@ public class MvcController {
     int numFraudReversals = jdbcTemplate.queryForObject(getUserReversalsSql, Integer.class);
 
     // Account frozen and no withdrawals/deposits can be made
-    if (numFraudReversals >= 2) {
+    if (numFraudReversals >= MAX_REVERSALS) {
       return "welcome";
     }
 
@@ -312,7 +309,7 @@ public class MvcController {
     int numFraudReversals = jdbcTemplate.queryForObject(getUserReversalsSql, Integer.class);
 
     // Account frozen and no withdrawals/deposits can be made
-    if (numFraudReversals >= 2) {
+    if (numFraudReversals >= MAX_REVERSALS) {
       return "welcome";
     }
 
@@ -422,7 +419,7 @@ public class MvcController {
     int numFraudReversals = jdbcTemplate.queryForObject(getUserReversalsSql, Integer.class);
 
     // Account frozen and no withdrawals/deposits can be made
-    if (numFraudReversals >= 2) {
+    if (numFraudReversals >= MAX_REVERSALS) {
       return "welcome";
     }
 
